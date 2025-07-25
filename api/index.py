@@ -15,7 +15,7 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 # Set the path to the Tesseract binary
-pytesseract.pytesseract.tesseract_cmd = "./bin/tesseract"
+pytesseract.pytesseract.tesseract_cmd = "./bin/tesseract.sh"
 
 # Log the path for debugging
 logging.info(f"Tesseract binary path: {pytesseract.pytesseract.tesseract_cmd}")
