@@ -14,6 +14,12 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
+# Set the path to the Tesseract binary
+pytesseract.pytesseract.tesseract_cmd = "./bin/tesseract"
+
+# Log the path for debugging
+logging.info(f"Tesseract binary path: {pytesseract.pytesseract.tesseract_cmd}")
+
 @app.route('/')
 def home():
     return jsonify({"message": "Menu OCR Service is running with Flask"})
