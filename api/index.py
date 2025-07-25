@@ -6,7 +6,7 @@ import base64
 from PIL import Image
 import pytesseract
 from flask_cors import CORS
-import hello
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,8 +23,7 @@ logging.info(f"Tesseract binary path: {pytesseract.pytesseract.tesseract_cmd}")
 
 @app.route('/')
 def home():
-    greeting = hello.hi()
-    return jsonify({"message": f"Menu OCR Service is running with {greeting}"})
+    return jsonify({"message": f"Menu OCR Service is running with"})
 
 @app.route('/health')
 def health():
