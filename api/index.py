@@ -11,6 +11,9 @@ from flask_cors import CORS
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Set the path to the Tesseract binary
+pytesseract.pytesseract.tesseract_cmd = "./bin/tesseract"
+
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
