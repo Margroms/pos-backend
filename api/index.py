@@ -1,103 +1,50 @@
-from fastapi import FastAPI, File, UploadFile, Request, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from flask import Flask, request, jsonify
 from PIL import Image
 import pytesseract
 import io
 import base64
 import logging
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+# In the Vercel environment, Tesseract is installed via apt-get,
+# and we need to tell pytesseract where to find the executable.
+if "VERCEL" in os.environ:
+    pytesseract.pytesseract.tesseract_cmd = r'/usr/bin/tesseract'
 
-# Enable CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
-    allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
-)
+app = Flask(__name__)
 
-class ImageModel(BaseModel):
-    image: str
+@app.route('/')
+def home():
+    return "OCR Service is running."
 
-@app.get("/")
-async def home():
-    return {"message": "Menu OCR Service is running with FastAPI"}
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy", "service": "Menu OCR Service"}
-
-@app.post("/ocr")
-async def ocr_image(request: Request, file: UploadFile = None):
+@app.route('/ocr', methods=['POST'])
+def ocr_image():
     try:
-        logger.info("OCR endpoint hit")
-        image_data = None
+        json_data = request.get_json()
+        if not json_data or 'image' not in json_data:
+            return jsonify({"success": False, "error": "No image key found in JSON payload"}), 400
 
-        # Handle multipart form data (file upload)
-        if file:
-            logger.info(f"Processing uploaded file: {file.filename}")
-            image_data = await file.read()
+        base64_string = json_data['image']
+        # Remove the data URI prefix if it exists (e.g., "data:image/png;base64,")
+        if ',' in base64_string:
+            base64_string = base64_string.split(',')[1]
+
+        image_data = base64.b64decode(base64_string)
+        image = Image.open(io.BytesIO(image_data))
         
-        # Handle JSON with base64 encoded image or raw image data
-        else:
-            content_type = request.headers.get('content-type', '').lower()
-            if 'application/json' in content_type:
-                try:
-                    json_data = await request.json()
-                    base64_string = json_data['image']
-                    if ',' in base64_string:
-                        base64_string = base64_string.split(',')[1]
-                    image_data = base64.b64decode(base64_string)
-                    logger.info("Processing base64 encoded image from JSON")
-                except Exception as e:
-                    logger.error(f"Invalid JSON or base64 image: {str(e)}")
-                    raise HTTPException(status_code=400, detail=f"Invalid JSON or base64 image: {str(e)}")
-            elif content_type.startswith('image/'):
-                image_data = await request.body()
-                logger.info("Processing raw image data")
-
-        if not image_data:
-            raise HTTPException(status_code=400, detail="No image file found in request")
-
-        logger.info(f"Processing image, size: {len(image_data)} bytes")
+        # Perform OCR
+        text = pytesseract.image_to_string(image)
         
-        # Process image with PIL and Tesseract
-        try:
-            image = Image.open(io.BytesIO(image_data))
-            logger.info(f"Image loaded: {image.format}, size: {image.size}, mode: {image.mode}")
+        return jsonify({"success": True, "text": text.strip()})
             
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
-            
-            logger.info("Starting OCR extraction...")
-            text = pytesseract.image_to_string(image, config='--psm 6')
-            
-            if not text or not text.strip():
-                logger.warning("No text extracted from image")
-                raise HTTPException(status_code=400, detail="No text found in image")
-            
-            logger.info(f"OCR completed. Text length: {len(text)}")
-            logger.info(f"OCR preview: {text[:200]}...")
-            
-            return {"success": True, "text": text}
-            
-        except HTTPException as http_exc:
-            raise http_exc # Re-raise HTTPException
-        except Exception as img_error:
-            logger.error(f"Error processing image: {str(img_error)}")
-            raise HTTPException(status_code=500, detail=f"Image processing error: {str(img_error)}")
-            
-    except HTTPException as http_exc:
-        return JSONResponse(status_code=http_exc.status_code, content={"success": False, "error": http_exc.detail})
     except Exception as e:
-        logger.error(f"Error in OCR handler: {str(e)}", exc_info=True)
-        return JSONResponse(status_code=500, content={"success": False, "error": f"Internal server error: {str(e)}"})
+        logger.error(f"Error in OCR handler: {e}", exc_info=True)
+        return jsonify({"success": False, "error": f"Internal server error: {str(e)}"}), 500
 
-# To run locally for testing: uvicorn api.index:app --reload
+# This entry point is for local testing. Vercel uses its own server.
+if __name__ == '__main__':
+    app.run(debug=True)

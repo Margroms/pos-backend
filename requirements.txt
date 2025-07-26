@@ -1,5 +1,3 @@
-fastapi
-uvicorn[standard]
-python-multipart
-Pillow==10.0.0
-pytesseract==0.3.10
+Flask
+Pillow
+pytesseract
