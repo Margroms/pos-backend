@@ -7,7 +7,6 @@ from PIL import Image
 import pytesseract
 from flask_cors import CORS
 
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,15 +14,9 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-# Set the path to the Tesseract binary using an absolute path for the serverless environment
-pytesseract.pytesseract.tesseract_cmd = "/var/task/bin/tesseract.sh"
-
-# Log the path for debugging
-logging.info(f"Tesseract binary path: {pytesseract.pytesseract.tesseract_cmd}")
-
 @app.route('/')
 def home():
-    return jsonify({"message": f"Menu OCR Service is running with"})
+    return jsonify({"message": "Menu OCR Service is running with Flask"})
 
 @app.route('/health')
 def health():
