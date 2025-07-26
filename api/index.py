@@ -45,9 +45,16 @@ def ocr_image():
             json_data = request.get_json()
             if 'image' in json_data:
                 try:
-                    image_data = base64.b64decode(json_data['image'])
+                    base64_string = json_data['image']
+                    # Handle data URI prefix if present (e.g., "data:image/png;base64,iVBOR...")
+                    if ',' in base64_string:
+                        base64_string = base64_string.split(',')[1]
+                    
+                    # Ensure the string is properly padded and decode
+                    image_data = base64.b64decode(base64_string)
                     logger.info("Processing base64 encoded image from JSON")
-                except Exception as e:
+                except (base64.binascii.Error, TypeError) as e:
+                    logger.error(f"Invalid base64 image: {str(e)}")
                     return jsonify({"success": False, "error": f"Invalid base64 image: {str(e)}"}), 400
         
         # Handle raw image data
