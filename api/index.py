@@ -1,107 +1,103 @@
-from flask import Flask, request, jsonify
-import json
-import io
-import logging
-import base64
+from fastapi import FastAPI, File, UploadFile, Request, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from PIL import Image
 import pytesseract
-from flask_cors import CORS
+import io
+import base64
+import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+app = FastAPI()
 
-@app.route('/')
-def home():
-    return jsonify({"message": "Menu OCR Service is running with Flask"})
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
-@app.route('/health')
-def health():
-    return jsonify({"status": "healthy", "service": "Menu OCR Service"})
+class ImageModel(BaseModel):
+    image: str
 
-@app.route('/ocr', methods=['POST', 'OPTIONS'])
-def ocr_image():
-    if request.method == 'OPTIONS':
-        # Handle CORS preflight
-        return '', 200
-    
+@app.get("/")
+async def home():
+    return {"message": "Menu OCR Service is running with FastAPI"}
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "service": "Menu OCR Service"}
+
+@app.post("/ocr")
+async def ocr_image(request: Request, file: UploadFile = None):
     try:
         logger.info("OCR endpoint hit")
-        
         image_data = None
-        
+
         # Handle multipart form data (file upload)
-        if 'file' in request.files:
-            file = request.files['file']
-            if file and file.filename:
-                logger.info(f"Processing uploaded file: {file.filename}")
-                image_data = file.read()
+        if file:
+            logger.info(f"Processing uploaded file: {file.filename}")
+            image_data = await file.read()
         
-        # Handle JSON with base64 encoded image
-        elif request.is_json:
-            json_data = request.get_json()
-            if 'image' in json_data:
+        # Handle JSON with base64 encoded image or raw image data
+        else:
+            content_type = request.headers.get('content-type', '').lower()
+            if 'application/json' in content_type:
                 try:
+                    json_data = await request.json()
                     base64_string = json_data['image']
-                    # Handle data URI prefix if present (e.g., "data:image/png;base64,iVBOR...")
                     if ',' in base64_string:
                         base64_string = base64_string.split(',')[1]
-                    
-                    # Ensure the string is properly padded and decode
                     image_data = base64.b64decode(base64_string)
                     logger.info("Processing base64 encoded image from JSON")
-                except (base64.binascii.Error, TypeError) as e:
-                    logger.error(f"Invalid base64 image: {str(e)}")
-                    return jsonify({"success": False, "error": f"Invalid base64 image: {str(e)}"}), 400
-        
-        # Handle raw image data
-        elif request.content_type and request.content_type.startswith('image/'):
-            image_data = request.get_data()
-            logger.info("Processing raw image data")
-        
+                except Exception as e:
+                    logger.error(f"Invalid JSON or base64 image: {str(e)}")
+                    raise HTTPException(status_code=400, detail=f"Invalid JSON or base64 image: {str(e)}")
+            elif content_type.startswith('image/'):
+                image_data = await request.body()
+                logger.info("Processing raw image data")
+
         if not image_data:
-            return jsonify({"success": False, "error": "No image file found in request"}), 400
-        
+            raise HTTPException(status_code=400, detail="No image file found in request")
+
         logger.info(f"Processing image, size: {len(image_data)} bytes")
         
-        # Process image with PIL
+        # Process image with PIL and Tesseract
         try:
             image = Image.open(io.BytesIO(image_data))
             logger.info(f"Image loaded: {image.format}, size: {image.size}, mode: {image.mode}")
             
-            # Convert to RGB if necessary
             if image.mode != 'RGB':
                 image = image.convert('RGB')
             
-            # OCR with Tesseract
             logger.info("Starting OCR extraction...")
             text = pytesseract.image_to_string(image, config='--psm 6')
             
             if not text or not text.strip():
                 logger.warning("No text extracted from image")
-                return jsonify({"success": False, "error": "No text found in image"}), 400
+                raise HTTPException(status_code=400, detail="No text found in image")
             
             logger.info(f"OCR completed. Text length: {len(text)}")
             logger.info(f"OCR preview: {text[:200]}...")
             
-            # Send successful response
-            response = {
-                "success": True,
-                "text": text
-            }
+            return {"success": True, "text": text}
             
-            return jsonify(response)
-            
+        except HTTPException as http_exc:
+            raise http_exc # Re-raise HTTPException
         except Exception as img_error:
             logger.error(f"Error processing image: {str(img_error)}")
-            return jsonify({"success": False, "error": f"Image processing error: {str(img_error)}"}), 500
+            raise HTTPException(status_code=500, detail=f"Image processing error: {str(img_error)}")
             
+    except HTTPException as http_exc:
+        return JSONResponse(status_code=http_exc.status_code, content={"success": False, "error": http_exc.detail})
     except Exception as e:
         logger.error(f"Error in OCR handler: {str(e)}", exc_info=True)
-        return jsonify({"success": False, "error": f"Internal server error: {str(e)}"}), 500
+        return JSONResponse(status_code=500, content={"success": False, "error": f"Internal server error: {str(e)}"})
 
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=8000)
+# To run locally for testing: uvicorn api.index:app --reload
